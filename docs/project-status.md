@@ -1,96 +1,38 @@
-# Project Status
+# Project Status — Portfolio Milestones
 
-This repository is a **public portfolio showcase** for an actively developed full-stack application.
+**English** | [简体中文](project-status.zh-CN.md) · [Main README](../README.md)
 
-The full implementation is maintained in a separate private source repository.
+**Functional core / Pre-release Mini Program.** The central product is implemented and usable through manual entry; there is **no public WeChat Mini Program release yet**.
 
-## Current State
+This page distinguishes product functionality, documented integration evidence and final public release. It is not a daily change log.
 
-### Completed and exercised locally
+## Implemented and usable
 
-- Core WeChat Mini Program product workflows
-- Node.js / Fastify REST backend
-- MySQL persistence and migrations
-- Local API integration
-- Real WeChat silent identity integration
-- Application session/token flow
-- Real WeChat text content moderation
-- Private Tencent COS upload flow
-- COS-backed detail display with signed URLs
-- Image replacement and deletion
-- Upload rollback when record creation fails
-- Explicit complete / partial media cleanup reporting
-- Automated frontend and backend tests
-- Production Docker / Nginx skeleton
+- Native Mini Program workflows for adding, viewing, editing and deleting eating-out and home-cooking foods.
+- Single-food and multi-food-per-store recording; store autocomplete and location-conflict safeguards.
+- Store metadata and hierarchical store-type selection, including user-defined secondary types.
+- Food library, search/filter, statistics, store detail and three random-draw paths (store / eating-out dish / home-cooking dish).
+- Node.js/Fastify versioned REST APIs, MySQL relations/migrations/transactions, application-owned sessions and user ownership boundaries.
+- Real WeChat identity and text safety and private COS media integration exercised in local environments.
+- Backend/frontend automated tests, local API smoke tests, deployment configuration and documented backend deployment/smoke evidence.
 
-### In progress / not yet production-complete
+## What is separate from completion of the core product
 
-- WeChat image content moderation
-- Real TDSQL-C Serverless connection
-- Tencent Lighthouse runtime deployment
-- Production HTTPS verification
-- WeChat production domain configuration
-- Production device acceptance
-- Local-data migration to the production backend
-- Experience-version and release acceptance
+**Screenshot-assisted form filling — not implemented, no committed schedule.** Future intent: interpret screenshots of food orders / group-buy pages to prefill store name/address, foods, quantities and prices when visible, followed by manual review. This is an experience improvement, not a claim of present AI functionality.
 
-## Next Development Sequence
+**WeChat image content moderation — different feature.** The asynchronous moderation submission, trace/callback matching, state handling and related test code exist. Real public HTTPS callback acceptance is not recorded as complete.
 
-### 1. Image moderation
+**Public release and remaining validation.** The Mini Program has not been published to general users. Backend deployment/smoke is documented, but that cannot by itself establish the current state of every cloud component, database migration, legal domain, production security check or device acceptance. These require independent verification before claiming an official release.
 
-Add the asynchronous image-safety workflow around already-uploaded COS assets:
+## What a recruiter can assess now
 
-```text
-upload
-→ pending asset
-→ submit image check
-→ verified callback
-→ approved / rejected / error
-```
+- A practical multi-entity product and complete manual input-to-selection user journeys.
+- Database/API design, per-user authorization, storage integrations and consistency failure handling.
+- Configurable environment boundaries and tests.
+- Clear separation between *working product functionality*, *deployment evidence* and *future intelligence features*.
 
-The project already has moderation-oriented asset fields in its private schema, so this phase can build on the existing media model instead of replacing it.
+## Public-sharing boundary
 
-### 2. Production data connection
+The application implementation remains private. This repository publishes architecture, engineering decisions and product scope only; it excludes user records, screenshots containing personal information, private images, source credentials, cloud secrets and production configuration.
 
-Connect the existing MySQL repository and migrations to TDSQL-C Serverless over the intended private network path.
-
-### 3. Lighthouse + HTTPS deployment
-
-Deploy the containerized backend behind Nginx, then validate:
-
-- `/health`
-- `/ready`
-- HTTPS
-- authentication
-- text moderation
-- database access
-- COS access
-
-### 4. Production mini-program acceptance
-
-Switch the mini-program to the production profile, configure legal domains, and test real-device flows end to end.
-
-### 5. Data migration
-
-Migrate any retained local data only after the production API and storage path have been validated.
-
-### 6. Release preparation
-
-Perform experience-version testing, error/recovery checks, privacy and user-data checks, and final release preparation.
-
-## Documentation Note
-
-The private project's README/progress documentation may temporarily lag behind manual integration testing. The public showcase should only be updated when a capability has been manually verified and is safe to describe without exposing credentials or user data.
-
-## What Is Intentionally Not Public
-
-This showcase does not contain:
-
-- private application source code
-- API or platform credentials
-- database credentials or contents
-- user data
-- signed media URLs
-- private infrastructure details
-
-Its purpose is to communicate the product scope and engineering work without turning the private production repository into a public source release.
+Update this document at meaningful product or release milestones, not every small code change.

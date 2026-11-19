@@ -1,158 +1,79 @@
-# Architecture
+# Architecture & Engineering Decisions
 
-## Overview
+**English** | [简体中文](architecture.zh-CN.md) · [Main README](../README.md)
 
-The application is split into a native WeChat Mini Program and a self-hosted Node.js backend.
+## 1. Core separation
 
-```text
-WeChat Mini Program
-        ↓
-Page / interaction layer
-        ↓
-Business services
-        ↓
-Repository + MediaService
-        ↓
-Authenticated REST API
-        ↓
-Node.js / Fastify backend
-        ↓
-┌─────────────────┬──────────────────┬─────────────────────┐
-│ DataRepository  │ MediaStorage     │ Identity / Moderation│
-│ MySQL           │ Tencent COS      │ WeChat APIs          │
-└─────────────────┴──────────────────┴─────────────────────┘
-```
-
-## Frontend Boundary
-
-The mini-program UI does not directly connect to MySQL, Tencent COS, or WeChat server-side APIs.
-
-Application pages depend on abstractions that can be configured for several environments:
-
-- `local`
-- `localApi`
-- `wechatApi`
-- `wechatMediaApi`
-- `production`
-
-This keeps normal UI and business workflows independent from the infrastructure used underneath.
-
-## Backend Boundary
-
-The backend exposes versioned `/api/v1` routes and separates infrastructure into stable responsibilities:
-
-### DataRepository
-
-Responsible for:
-
-- stores
-- food items
-- tags and categories
-- user settings
-- random-selection candidates
-- assets metadata
-- transactions and soft deletion
-
-Local development and production use the same MySQL repository implementation with different connection settings.
-
-### MediaStorage
-
-Responsible for:
-
-- uploading private media
-- deleting objects
-- generating short-lived display URLs
-
-The current production-oriented adapter uses Tencent COS.
-
-The database stores media metadata and stable object keys. Signed URLs are generated only when needed and are not persisted.
-
-### Identity
-
-The WeChat-enabled flow is:
+The native WeChat Mini Program provides the interaction layer. Its pages depend on business services, Repository and MediaService interfaces, not directly on server-side MySQL/COS internals.
 
 ```text
-wx.login
-   ↓
-temporary code
-   ↓
-backend code exchange
-   ↓
-internal user mapping
-   ↓
-application-owned opaque session token
-   ↓
-Bearer-authenticated business API
+Mini Program pages (record / library / store details / draw)
+              ↓
+Business services (food / store / filters / drawing)
+              ↓
+Repository & MediaService adapters
+              ↓ HTTPS / JSON + authenticated uploads
+Node.js / Fastify backend (/api/v1)
+   ├─ Identity / authorization / validation
+   ├─ MySQL repositories / migrations / transactions
+   ├─ Tencent COS private-media lifecycle
+   └─ WeChat identity and content-safety integrations
 ```
 
-The mini-program does not store WeChat AppSecret or server-side identity secrets.
+Supported environments differentiate local-only data, local API + MySQL, WeChat identity/text safety, COS-backed media and the production configuration. These paths share application behavior while keeping infrastructure choices explicit.
 
-### Content Moderation
+## 2. Food versus store identity
 
-User-entered text is sent through the WeChat content-safety API before business data is written in WeChat-enabled environments.
+A **Store** owns its name, location, overall rating and optional store types. A **Food** entry has its own status, tags, categories, rating, price, date and media, linked to a store for eating-out records.
 
-Image moderation is intentionally a separate upcoming phase because it requires asynchronous moderation state and callback handling.
+Normalized store name is the current identity rule **within one user**. A conflicting address is not silently overwritten. Store types are optional and modeled separately from food categories, so choosing a type does not block quick food recording.
 
-## Media Flow
+The same store can have multiple food entries, and an atomic multi-food recording operation prevents partially created store visits.
+
+## 3. Filtering and independent draw engines
+
+The app separates choosing an **eating-out dish**, an **eating-out store**, and **a home-cooked dish**. They have different candidate filters and must not share state accidentally.
+
+Store drawing uses store-type hierarchy and session exclusions; the client keeps the reveal interaction separate from the actual random selection. This makes business tests independent of animation.
+
+## 4. Identity and private media
 
 ```text
-Select image
-    ↓
-Client-side size/dimension preparation
-    ↓
-Authenticated multipart upload
-    ↓
-Backend MIME + file-signature validation
-    ↓
-Backend-generated project/user object key
-    ↓
-Private Tencent COS object
-    ↓
-Asset metadata in MySQL
+wx.login → server code exchange → internal user ID
+   → app-owned opaque session → authorized API
+   → backend-checked food/store/media ownership
 ```
 
-Important rules:
-
-- one active image per food item
-- the client cannot supply the COS object key
-- object keys stay inside a project namespace
-- owner checks are enforced on asset operations
-- list endpoints do not generate signed URLs
-- detail endpoints generate short-lived signed URLs only when needed
-- uploaded media is rolled back when the later create workflow fails
-
-## Delete & Consistency Semantics
-
-MySQL and object storage cannot participate in one atomic transaction.
-
-The application therefore distinguishes:
-
-- **success:** database deletion completed and all related COS cleanup completed
-- **partial:** database deletion completed but one or more COS cleanup operations failed
-- **failure:** the database operation itself failed
-
-This prevents the UI from claiming a complete deletion when cloud-media cleanup was incomplete.
-
-For a standalone “remove image but keep food item” operation, COS deletion remains strict: metadata is only marked deleted after object deletion succeeds.
-
-## Production Target
+For optional food images:
 
 ```text
-WeChat Mini Program
-        ↓ HTTPS
-Nginx on Tencent Lighthouse
-        ↓ localhost container port
-Node.js / Fastify Docker container
-        ↓ VPC
-TDSQL-C Serverless MySQL
-
-Node backend
-        ↓
-Tencent COS
-
-Node backend
-        ↓
-WeChat identity / moderation APIs
+Client image preparation
+   → authenticated multipart upload
+   → MIME + file-signature validation
+   → backend-generated COS object key
+   → private Tencent COS bucket
+   → database metadata
+   → signed short-lived detail URL (on demand)
 ```
 
-The repository already contains the deployment skeleton, but real production deployment and acceptance are still in progress.
+Regular list endpoints do not need fresh signed media URLs. The server owns object-key generation and upload/delete permission checks.
+
+## 5. Failure and transaction boundaries
+
+MySQL and COS cannot participate in one ACID transaction. A multi-entity create uses MySQL transaction semantics; uploaded media is cleaned up when a downstream create fails.
+
+For deletion, the API distinguishes full success from **partial cleanup** (the database operation succeeded but COS cleanup failed) and failure of the database operation. The UI should not claim all cloud data was removed merely because a database row was deleted.
+
+## 6. Screenshot recognition versus moderation
+
+**Future, not implemented:** parse a user's screenshot of an order or deal page to extract objective store/address/dish/quantity/price information and offer an editable prefilled form. The user confirms the details before persistence. No vision-model provider or completion date is being claimed.
+
+**Separate existing engineering component:** WeChat image **content-safety** handling includes asynchronous submission, state tracking, signed callback handling and automated tests. This controls whether uploaded images may be shown, not what restaurant/dish they depict. Production callback acceptance remains outstanding.
+
+## 7. Deployment and verification
+
+The production-oriented design uses a self-hosted Node/Fastify backend behind Nginx/HTTPS and managed MySQL plus COS. Development includes local integration with real WeChat identity and media APIs.
+
+The private documentation records backend deployment and smoke testing. **The overall WeChat Mini Program is not publicly released**, and cloud/HTTPS/domain/device acceptance must not be conflated with source implementation or isolated smoke tests.
+
+This portfolio deliberately omits infrastructure credentials, user data, signed URLs and private application code.

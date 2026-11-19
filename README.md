@@ -1,216 +1,93 @@
-# Meal Choice & Food Library Mini Program
+# Meal Choice & Food Library — WeChat Mini Program
 
-A full-stack WeChat Mini Program for recording personal food choices and randomly deciding what to eat next.
+**A usable full-stack personal food library and meal-decision app, built with a native WeChat Mini Program and a Node.js / Fastify backend.**
 
-> **Status:** In active development  
-> **Role:** Independent full-stack developer  
-> **Focus:** WeChat Mini Program · Node.js / Fastify REST API · MySQL · Tencent COS · WeChat authentication & content safety · containerized deployment
+**Role:** Independent full-stack developer — product flow, data modeling, API integration, media security, testing and deployment preparation.  
+**Stack:** JavaScript · WeChat Mini Program · Node.js / Fastify · MySQL · Tencent COS · WeChat APIs · Docker / Nginx  
+**Release status:** **Core manual-entry workflows are functional; the Mini Program has not been publicly released.** This is not a publicly accessible live demo.
 
 **English** | [简体中文](README.zh-CN.md)
 
-## Project Overview
+## What the application does
 
-This project is a personal food-library and meal-decision application built as a native WeChat Mini Program with a self-hosted backend.
+The problem is familiar: people often forget what they have eaten or struggle to decide what to eat next. This project combines a personal food history with a configurable random-choice workflow.
 
-It supports two related workflows:
+Two distinct modes share one application:
 
-- **Eating out:** record stores and dishes, including ratings, categories, dining modes, tags, notes, price, date, and an optional image.
-- **Cooking at home:** record dishes already cooked or planned for later, then randomly generate a choice when deciding what to make.
+- **Eating out:** record restaurants/stores and individual dishes; search the library by store or dish, edit ratings and details, and randomly draw a **dish or a store**.
+- **Cooking at home:** maintain a separate library for dishes already cooked or planned, filter candidates, and randomly choose a home-cooking option.
 
-The product is designed around a simple loop:
+**The main app is usable through manual entry today.** Entering store names, locations and many dishes by hand can be tedious. A planned screenshot-to-form feature addresses that usability gap, but **it has not been implemented and has no committed delivery date**.
 
-```text
-Record food
-    ↓
-Organize personal library
-    ↓
-Filter candidates
-    ↓
-Randomly select a dish or store
-    ↓
-Reveal the result through a lightweight blind-box interaction
-```
+## Product workflows already implemented
 
-The private source repository contains the full implementation. This public repository is a portfolio showcase focused on product capabilities, architecture, engineering decisions, and development status.
+| Workflow | Functional scope |
+| --- | --- |
+| Food recording | Single-dish or multi-dish-at-one-store input; restaurant name, location, rating, food categories, tags, price, date, notes, optional picture |
+| Store organization | Store search/autocomplete, location-conflict handling, editable store details, hierarchical store types and user-defined subtypes |
+| Food library | Separate eating-out / home-cooking views; browse, search, filter, statistics, edit, delete |
+| Meal selection | Separate randomized **store**, **dish** and **home-cooking** candidate pools; filters, candidate counts and reveal interaction |
+| User and media | WeChat login, user-scoped data, private COS image storage, short-lived display URLs, upload/replace/delete with explicit cleanup handling |
 
-## What I Built
+The interface and core business flows have been developed and exercised. Completion of an interactive product flow is **not** the same as final production/WeChat release acceptance.
 
-- A native WeChat Mini Program frontend using JavaScript, WXML, and WXSS
-- A Node.js / Fastify backend exposing versioned REST APIs
-- A MySQL persistence layer with versioned, non-destructive migrations
-- Store and food-item relationships with transactional batch creation
-- Search, filtering, library statistics, editing, deletion, and random selection
-- Separate meal-selection logic for eating out and cooking at home
-- WeChat silent authentication with application-owned opaque sessions
-- Real WeChat text content-safety integration
-- Private Tencent COS image storage with authenticated upload and deletion
-- Short-lived signed image URLs generated only when detail pages need them
-- Per-user ownership checks for data and media
-- Environment-specific adapters for local development, API integration, WeChat integration, COS integration, and production
-- Docker and Nginx production deployment preparation
-- Automated backend and mini-program tests plus local API smoke testing
+[Detailed feature breakdown](docs/features.md) · [Development and release boundary](docs/project-status.md)
 
-## Product Workflow
+## Architecture
+
+The Mini Program uses repository and media-service interfaces so business screens do not have to embed cloud-specific behavior.
 
 ```text
-┌──────────────────────────────┐
-│      WeChat Mini Program     │
-│ record · search · filter     │
-│ random pick · detail/edit    │
-└───────────────┬──────────────┘
-                │ REST / HTTPS
-                ▼
-┌──────────────────────────────┐
-│       Node.js / Fastify      │
-│ auth · validation · services │
-│ business rules · API routes  │
-└───────┬──────────┬───────────┘
-        │          │
-        ▼          ▼
-┌──────────────┐  ┌────────────────┐
-│    MySQL     │  │  Tencent COS   │
-│ structured   │  │ private images │
-│ application  │  │ signed access  │
-│ data         │  │                │
-└──────────────┘  └────────────────┘
-        │
-        ▼
-┌──────────────────────────────┐
-│        WeChat APIs           │
-│ login · text content safety  │
-└──────────────────────────────┘
+WeChat Mini Program (JavaScript / WXML / WXSS)
+  ├─ Pages: recording / library / store detail / random draw
+  ├─ Business services and repository / media adapters
+  └─ Authenticated HTTPS / REST requests
+                  │
+                  ▼
+Node.js / Fastify API (/api/v1)
+  ├─ Authentication and per-user ownership checks
+  ├─ Store / food / filter / draw business operations
+  ├─ MySQL transactions and versioned migrations
+  ├─ Tencent COS private-media lifecycle
+  └─ WeChat identity and content-moderation APIs
 ```
 
-More detail: [docs/architecture.md](docs/architecture.md)
+Development profiles support browser/WeChat local data, local API + MySQL, real WeChat identity integration and real COS media integration. The production target uses Docker/Nginx/HTTPS and a managed MySQL backend, with release verification handled separately.
 
-## Key Capabilities
+[Architecture and engineering tradeoffs](docs/architecture.md)
 
-### Personal Food Library
+## Engineering highlights
 
-Users can record food from restaurants or home cooking, organize entries with fixed categories and custom tags, and search or filter the library later.
+**1. Relational data modeling and consistency.** Stores, individual dishes and store types have separate identities and ownership rules. A store can hold multiple foods in one atomic creation operation; matching an existing store does not silently overwrite a conflicting non-empty location.
 
-### Store & Dish Relationship
+**2. Multiple selection engines.** Store drawing uses a type-aware candidate filter and excludes selected results within the draw session. Dish selection and home-cooking selection remain independent, preserving their own filters and rules.
 
-Eating-out records are modeled as stores containing individual food items. Users can add one dish at a time or record several dishes from the same store in one flow.
+**3. Secure image handling.** The client prepares images; Fastify validates MIME type and file signatures, controls object-key namespaces, verifies ownership and stores assets privately in Tencent COS. Detail pages obtain short-lived signed display URLs; list pages avoid generating them.
 
-### Random Meal Selection
+**4. Cross-system failure handling.** Database writes and COS deletion cannot form one atomic transaction. The implementation distinguishes complete versus partial deletion, and rolls back uploaded images when a subsequent record-creation operation fails.
 
-The app can randomly choose from filtered candidates instead of asking the user to compare choices manually. Eating-out and home-cooking candidates remain separate.
+**5. Real integrations and testable boundaries.** The project includes actual local integration with WeChat identity/text safety and COS, configurable local versus production adapters, automated frontend/backend tests, an API smoke suite and production-oriented container configuration. The asynchronous image-safety workflow has implementation and mocked callback tests, while **actual production HTTPS callback acceptance remains unverified**.
 
-### Private Image Storage
+## Future enhancement — screenshot-based assisted entry
 
-Each food item can have an optional image. Images are compressed on the mini-program side, uploaded through the authenticated backend, stored privately in Tencent COS, and exposed to detail pages through short-lived signed URLs.
+**Not implemented. No committed ETA. Not required for the existing manual-entry workflows to function.**
 
-List pages intentionally do not request image URLs, reducing unnecessary object-storage traffic.
+The intended experience is to upload a screenshot from a food order, takeaway, group-buy or similar page and **extract objective information visibly present** — for example:
 
-### Authentication & User Isolation
+- restaurant/store name and available address;
+- dish/item names, quantities and listed prices;
+- package or combo details when the screenshot makes them explicit.
 
-The mini-program uses `wx.login`, while the backend exchanges the temporary code and issues its own opaque session token. Business data and media operations are scoped to the authenticated internal user.
+The information would be used to **prefill an editable form**, with user review and confirmation before saving. The system should not invent missing addresses or auto-generate subjective ratings, store categories or food evaluations.
 
-### Content Safety
+This is **document/screenshot understanding for data entry**, not automatic recognition of dishes from food photographs. It is also separate from **WeChat image content moderation**, which checks whether images are allowed.
 
-User-entered text is checked through WeChat's content-safety API in WeChat-enabled environments. Text is validated before business data is written.
+## Where the project stands
 
-Image content moderation is the next moderation phase and is not presented as complete in this showcase.
+**Available as an implemented application:** manual entry, personal library, store types and details, three selection modes, identity/data isolation, media flows and local testing. The private project documentation also records production-backend deployment and smoke testing.
 
-## Tech Stack
+**Not a published Mini Program:** public release, final device/domain/production checks and remaining acceptance are separate. Screenshot-based assisted entry is deferred for convenience rather than a prerequisite for the underlying food-library or draw logic.
 
-**Frontend**
-- WeChat Mini Program
-- JavaScript
-- WXML / WXSS
+This public repository is a technical showcase; it does not include a runnable copy of the private product, real user information, private assets or credentials.
 
-**Backend**
-- Node.js 20+
-- Fastify
-- REST API
-- `@fastify/multipart`
-
-**Data & Storage**
-- MySQL 8
-- Tencent COS
-- Versioned SQL migrations
-
-**External Integration**
-- WeChat login / code exchange
-- WeChat text content-safety API
-
-**Deployment**
-- Docker
-- Nginx
-- HTTPS production architecture
-- TDSQL-C Serverless target database
-
-## Engineering Highlights
-
-The project uses explicit boundaries instead of embedding cloud-specific logic directly in pages:
-
-```text
-Mini Program Page
-      ↓
-Business Service
-      ↓
-Repository / Media Service
-      ↓
-API Adapter
-      ↓
-Backend
-      ↓
-DataRepository · MediaStorage · IdentityProvider · ContentModerator
-```
-
-This allows local development and production-oriented integrations to share the same product workflows while swapping infrastructure through configuration.
-
-Other engineering decisions include:
-
-- production configuration rejects unsafe local/mock adapters
-- media object keys are generated by the backend under a project-specific namespace
-- clients cannot choose COS object keys
-- media ownership is checked server-side
-- image type is validated using both declared MIME and file signatures
-- database metadata is kept separate from signed display URLs
-- food deletion and COS cleanup report complete vs partial outcomes explicitly
-- failed create workflows roll back already-uploaded media
-- store records are soft-deleted when their final active food item is removed
-- list endpoints avoid generating image URLs
-
-## Current Development Status
-
-The core application, local API integration, real WeChat identity flow, real WeChat text moderation, and real COS media workflow have been exercised in localhost integration.
-
-The next major work is:
-
-1. WeChat image content moderation
-2. Real TDSQL-C connection
-3. Lighthouse + Nginx + HTTPS deployment
-4. Production WeChat / domain validation and device acceptance
-5. Local-to-production data migration
-6. Experience-version testing and release preparation
-
-See [docs/project-status.md](docs/project-status.md).
-
-## Repository Structure
-
-```text
-.
-├── README.md
-├── README.zh-CN.md
-└── docs/
-    ├── architecture.md
-    ├── features.md
-    └── project-status.md
-```
-
-## Public Showcase Scope
-
-This repository intentionally does **not** contain:
-
-- private production source code
-- WeChat AppSecret or application credentials
-- Tencent COS credentials
-- database credentials or contents
-- user data
-- signed media URLs
-- private infrastructure configuration
-
-It is maintained as a portfolio repository that documents the project without exposing the private implementation.
+[Read the concise project status](docs/project-status.md) · [中文版本](README.zh-CN.md)
